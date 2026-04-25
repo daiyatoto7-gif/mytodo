@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { X, ChevronRight } from 'lucide-react'
+
 import { clsx } from 'clsx'
 import { createTask } from '@/app/actions/tasks'
 import type { Category, Priority } from '@/types'

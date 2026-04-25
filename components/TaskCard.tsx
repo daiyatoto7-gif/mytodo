@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { clsx } from 'clsx'
 import { format, isPast, isToday } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { toggleTaskComplete, deleteTask } from '@/app/actions/tasks'
+import { toggleTaskComplete } from '@/app/actions/tasks'
 import type { Task } from '@/types'
 
 interface TaskCardProps {
