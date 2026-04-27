@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
 import {
   format,
@@ -19,10 +19,7 @@ import { clsx } from 'clsx'
 import TaskCard from '@/components/TaskCard'
 import AddTaskSheet from '@/components/AddTaskSheet'
 import FAB from '@/components/FAB'
-import { getTasks } from '@/app/actions/tasks'
-import { getCategories } from '@/app/actions/categories'
-import { getGoogleCalendarEvents } from '@/app/actions/google-calendar'
-import type { Task, Category } from '@/types'
+import { useTasks, useCategories, useGoogleCalendarEvents } from '@/hooks/useTaskData'
 import type { GoogleCalendarEvent } from '@/lib/google-calendar'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -40,26 +37,14 @@ function getEventDate(event: GoogleCalendarEvent): string | null {
 export default function CalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(new Date())
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [googleEvents, setGoogleEvents] = useState<GoogleCalendarEvent[]>([])
   const [isSheetOpen, setIsSheetOpen] = useState(false)
 
-  async function loadData(month: Date) {
-    const [tasksData, categoriesData, googleData] = await Promise.all([
-      getTasks(),
-      getCategories(),
-      getGoogleCalendarEvents(month.getFullYear(), month.getMonth() + 1),
-    ])
-    setTasks(tasksData as Task[])
-    setCategories(categoriesData as Category[])
-    setGoogleEvents(googleData)
-  }
-
-  useEffect(() => {
-    loadData(currentMonth)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMonth])
+  const { tasks, refresh } = useTasks()
+  const { categories } = useCategories()
+  const { googleEvents, refreshEvents } = useGoogleCalendarEvents(
+    currentMonth.getFullYear(),
+    currentMonth.getMonth() + 1
+  )
 
   const monthStart = startOfMonth(currentMonth)
   const monthEnd = endOfMonth(currentMonth)
@@ -91,6 +76,10 @@ export default function CalendarPage() {
     return format(new Date(event.start.dateTime), 'HH:mm', { locale: ja })
   }
 
+  function handleMonthChange(newMonth: Date) {
+    setCurrentMonth(newMonth)
+  }
+
   return (
     <div className="px-4 pt-12">
       {/* Month header */}
@@ -110,13 +99,13 @@ export default function CalendarPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
+            onClick={() => handleMonthChange(subMonths(currentMonth, 1))}
             className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
-            onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+            onClick={() => handleMonthChange(addMonths(currentMonth, 1))}
             className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-colors"
           >
             <ChevronRight className="h-4 w-4" />
@@ -248,7 +237,7 @@ export default function CalendarPage() {
               <TaskCard
                 key={task.id}
                 task={task}
-                onUpdate={() => loadData(currentMonth)}
+                onUpdate={() => { refresh(); refreshEvents() }}
               />
             ))}
 
@@ -288,7 +277,7 @@ export default function CalendarPage() {
         isOpen={isSheetOpen}
         onClose={() => {
           setIsSheetOpen(false)
-          loadData(currentMonth)
+          refresh()
         }}
         categories={categories}
       />

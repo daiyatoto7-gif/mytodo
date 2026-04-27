@@ -1,37 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import TaskCard from '@/components/TaskCard'
 import AddTaskSheet from '@/components/AddTaskSheet'
 import FAB from '@/components/FAB'
-import { getTasks } from '@/app/actions/tasks'
-import { getCategories } from '@/app/actions/categories'
-import type { Task, Category, Priority } from '@/types'
+import { useTasks, useCategories } from '@/hooks/useTaskData'
+import type { Priority } from '@/types'
 
 type StatusFilter = 'all' | 'incomplete' | 'completed'
 
 export default function TodayPage() {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
+  const { tasks, refresh } = useTasks({ view: 'today' })
+  const { categories } = useCategories()
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('incomplete')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<Priority | ''>('')
-
-  async function loadData() {
-    const [tasksData, categoriesData] = await Promise.all([
-      getTasks({ view: 'today' }),
-      getCategories(),
-    ])
-    setTasks(tasksData as Task[])
-    setCategories(categoriesData as Category[])
-  }
-
-  useEffect(() => {
-    loadData()
-  }, [])
 
   const filtered = tasks.filter((t) => {
     if (statusFilter === 'incomplete' && t.is_completed) return false
@@ -159,7 +145,7 @@ export default function TodayPage() {
               <p className="text-xs font-medium text-red-500 mb-2">期限切れ</p>
               <div className="space-y-2">
                 {overdueTasks.map((task) => (
-                  <TaskCard key={task.id} task={task} onUpdate={loadData} />
+                  <TaskCard key={task.id} task={task} onUpdate={refresh} />
                 ))}
               </div>
             </div>
@@ -173,7 +159,7 @@ export default function TodayPage() {
               )}
               <div className="space-y-2">
                 {todayTasks.map((task) => (
-                  <TaskCard key={task.id} task={task} onUpdate={loadData} />
+                  <TaskCard key={task.id} task={task} onUpdate={refresh} />
                 ))}
               </div>
             </div>
@@ -186,7 +172,7 @@ export default function TodayPage() {
         isOpen={isSheetOpen}
         onClose={() => {
           setIsSheetOpen(false)
-          loadData()
+          refresh()
         }}
         categories={categories}
       />

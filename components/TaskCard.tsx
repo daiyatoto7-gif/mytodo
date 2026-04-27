@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { clsx } from 'clsx'
 import { format, isPast, isToday } from 'date-fns'
@@ -26,14 +26,20 @@ const PRIORITY_COLOR: Record<string, string> = {
 }
 
 export default function TaskCard({ task, onUpdate }: TaskCardProps) {
-  const [isCompleting, setIsCompleting] = useState(false)
+  // Optimistic local state for instant checkbox feedback
+  const [optimisticCompleted, setOptimisticCompleted] = useState(task.is_completed)
+
+  // Sync when server data updates (after SWR revalidation)
+  useEffect(() => {
+    setOptimisticCompleted(task.is_completed)
+  }, [task.is_completed])
 
   const completedSubtasks = task.subtasks?.filter((s) => s.is_completed).length ?? 0
   const totalSubtasks = task.subtasks?.length ?? 0
 
   const isOverdue =
     task.due_date &&
-    !task.is_completed &&
+    !optimisticCompleted &&
     isPast(new Date(task.due_date + 'T23:59:59'))
 
   const dueDateDisplay = task.due_date
@@ -43,10 +49,14 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
     : null
 
   async function handleToggle() {
-    setIsCompleting(true)
-    await toggleTaskComplete(task.id, !task.is_completed)
-    setIsCompleting(false)
-    onUpdate?.()
+    const newValue = !optimisticCompleted
+    setOptimisticCompleted(newValue) // instant visual feedback
+    try {
+      await toggleTaskComplete(task.id, task.is_completed)
+      onUpdate?.()
+    } catch {
+      setOptimisticCompleted(optimisticCompleted) // rollback on error
+    }
   }
 
   return (
@@ -54,15 +64,14 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
       {/* Checkbox */}
       <button
         onClick={handleToggle}
-        disabled={isCompleting}
         className={clsx(
           'mt-0.5 h-5 w-5 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-all',
-          task.is_completed
+          optimisticCompleted
             ? 'border-gray-300 bg-gray-300 dark:border-gray-600 dark:bg-gray-600'
             : 'border-gray-300 dark:border-gray-600 hover:border-gray-500'
         )}
       >
-        {task.is_completed && (
+        {optimisticCompleted && (
           <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
@@ -74,7 +83,7 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
         <p
           className={clsx(
             'text-sm font-medium truncate',
-            task.is_completed
+            optimisticCompleted
               ? 'line-through text-gray-400 dark:text-gray-500'
               : 'text-gray-900 dark:text-white'
           )}

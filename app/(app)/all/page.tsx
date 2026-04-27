@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Search, ArrowUpDown } from 'lucide-react'
 import TaskCard from '@/components/TaskCard'
 import AddTaskSheet from '@/components/AddTaskSheet'
 import FAB from '@/components/FAB'
-import { getTasks } from '@/app/actions/tasks'
-import { getCategories } from '@/app/actions/categories'
-import type { Task, Category, Priority } from '@/types'
+import { useTasks, useCategories } from '@/hooks/useTaskData'
+import type { Priority } from '@/types'
 
 type StatusFilter = 'all' | 'incomplete' | 'completed'
 type SortKey = 'created' | 'due_date' | 'priority'
@@ -27,27 +26,14 @@ const PRIORITIES: { value: Priority; label: string }[] = [
 ]
 
 export default function AllPage() {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
+  const { tasks, refresh } = useTasks()
+  const { categories } = useCategories()
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<Priority | ''>('')
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('created')
-
-  async function loadData() {
-    const [tasksData, categoriesData] = await Promise.all([
-      getTasks(),
-      getCategories(),
-    ])
-    setTasks(tasksData as Task[])
-    setCategories(categoriesData as Category[])
-  }
-
-  useEffect(() => {
-    loadData()
-  }, [])
 
   function cycleSort() {
     const keys: SortKey[] = ['created', 'due_date', 'priority']
@@ -202,7 +188,7 @@ export default function AllPage() {
       ) : (
         <div className="space-y-2">
           {filtered.map((task) => (
-            <TaskCard key={task.id} task={task} onUpdate={loadData} />
+            <TaskCard key={task.id} task={task} onUpdate={refresh} />
           ))}
         </div>
       )}
@@ -212,7 +198,7 @@ export default function AllPage() {
         isOpen={isSheetOpen}
         onClose={() => {
           setIsSheetOpen(false)
-          loadData()
+          refresh()
         }}
         categories={categories}
       />

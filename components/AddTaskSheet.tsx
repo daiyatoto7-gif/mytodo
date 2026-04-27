@@ -62,21 +62,23 @@ export default function AddTaskSheet({ isOpen, onClose, categories }: AddTaskShe
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop — z-[55] to cover BottomNav (z-50) */}
       <div
-        className="fixed inset-0 z-40 bg-black/20 dark:bg-black/40"
+        className="fixed inset-0 z-[55] bg-black/20 dark:bg-black/40"
         onClick={onClose}
       />
 
-      {/* Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-950 rounded-t-2xl shadow-xl">
-        <div className="max-w-[600px] mx-auto">
+      {/* Sheet — z-[60] above backdrop, max-h for keyboard safety */}
+      <div className="fixed bottom-0 left-0 right-0 z-[60] bg-white dark:bg-gray-950 rounded-t-2xl shadow-xl flex flex-col max-h-[85dvh]">
+        <div className="max-w-[600px] mx-auto w-full flex flex-col min-h-0">
           {/* Handle */}
-          <div className="flex justify-center pt-3 pb-2">
+          <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
             <div className="h-1 w-10 rounded-full bg-gray-200 dark:bg-gray-700" />
           </div>
 
-          <form onSubmit={handleSubmit} className="px-4 pb-8 space-y-4">
+          {/* Scrollable area — allows keyboard push */}
+          <div className="overflow-y-auto flex-1 min-h-0">
+          <form onSubmit={handleSubmit} className="px-4 space-y-4" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom))' }}>
             {/* Title */}
             <input
               ref={inputRef}
@@ -160,6 +162,7 @@ export default function AddTaskSheet({ isOpen, onClose, categories }: AddTaskShe
               </button>
             </div>
           </form>
+          </div>
         </div>
       </div>
     </>
