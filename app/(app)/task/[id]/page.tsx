@@ -2,13 +2,16 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Trash2, Plus, Check } from 'lucide-react'
+import { ArrowLeft, Trash2, Plus, Check, Bell, BellOff, CalendarDays } from 'lucide-react'
 import { format } from 'date-fns'
+import { ja } from 'date-fns/locale'
 import { clsx } from 'clsx'
 import { getTask, updateTask, deleteTask } from '@/app/actions/tasks'
+import { syncTaskToCalendar, removeTaskFromCalendar } from '@/app/actions/google-calendar'
 import { getCategories } from '@/app/actions/categories'
 import { createSubtask, toggleSubtask, deleteSubtask } from '@/app/actions/subtasks'
-import type { Task, Category, Priority } from '@/types'
+import { createReminder, deleteReminder } from '@/app/actions/reminders'
+import type { Task, Category, Priority, Reminder } from '@/types'
 
 const PRIORITIES: { value: Priority; label: string }[] = [
   { value: 'high', label: '高' },
@@ -30,24 +33,35 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     category_id: '',
     priority: 'medium' as Priority,
   })
+  const [newRemindAt, setNewRemindAt] = useState('')
+  const [isAddingReminder, setIsAddingReminder] = useState(false)
+  const [isSyncingCalendar, setIsSyncingCalendar] = useState(false)
+  const [calendarSyncMessage, setCalendarSyncMessage] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState(false)
 
   async function loadData() {
-    const [taskData, categoriesData] = await Promise.all([
-      getTask(params.id),
-      getCategories(),
-    ])
-    if (taskData) {
-      setTask(taskData as Task)
-      setEditForm({
-        title: taskData.title,
-        memo: taskData.memo ?? '',
-        due_date: taskData.due_date ?? '',
-        due_time: taskData.due_time ?? '',
-        category_id: taskData.category_id ?? '',
-        priority: taskData.priority as Priority,
-      })
+    try {
+      const [taskData, categoriesData] = await Promise.all([
+        getTask(params.id),
+        getCategories(),
+      ])
+      if (taskData) {
+        setTask(taskData as Task)
+        setEditForm({
+          title: taskData.title,
+          memo: taskData.memo ?? '',
+          due_date: taskData.due_date ?? '',
+          due_time: taskData.due_time ?? '',
+          category_id: taskData.category_id ?? '',
+          priority: taskData.priority as Priority,
+        })
+      } else {
+        setLoadError(true)
+      }
+      setCategories(categoriesData as Category[])
+    } catch {
+      setLoadError(true)
     }
-    setCategories(categoriesData as Category[])
   }
 
   useEffect(() => {
@@ -72,9 +86,27 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   async function handleDelete() {
     if (!task) return
     if (confirm('このタスクを削除しますか？')) {
+      if (task.google_calendar_event_id) {
+        await removeTaskFromCalendar(task.id)
+      }
       await deleteTask(task.id)
       router.back()
     }
+  }
+
+  async function handleSyncCalendar() {
+    if (!task) return
+    setIsSyncingCalendar(true)
+    setCalendarSyncMessage(null)
+    const result = await syncTaskToCalendar(task.id)
+    if (result.success) {
+      setCalendarSyncMessage('同期しました')
+      loadData()
+    } else {
+      setCalendarSyncMessage(result.error ?? 'エラーが発生しました')
+    }
+    setIsSyncingCalendar(false)
+    setTimeout(() => setCalendarSyncMessage(null), 3000)
   }
 
   async function handleAddSubtask(e: React.FormEvent) {
@@ -85,6 +117,50 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     loadData()
   }
 
+  async function handleAddReminder(e: React.FormEvent) {
+    e.preventDefault()
+    if (!task || !newRemindAt) return
+    setIsAddingReminder(true)
+    // Convert local datetime-local value to ISO string
+    const localDate = new Date(newRemindAt)
+    await createReminder(task.id, localDate.toISOString())
+    setNewRemindAt('')
+    setIsAddingReminder(false)
+    loadData()
+  }
+
+  async function handleDeleteReminder(reminderId: string) {
+    if (!task) return
+    await deleteReminder(reminderId, task.id)
+    loadData()
+  }
+
+  function formatReminderDate(isoString: string) {
+    return format(new Date(isoString), 'yyyy/M/d(EEE) HH:mm', { locale: ja })
+  }
+
+  // Default datetime-local value: current time + 10 min, rounded to nearest 5 min
+  function getDefaultRemindAt() {
+    const d = new Date(Date.now() + 10 * 60 * 1000)
+    d.setSeconds(0, 0)
+    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5)
+    return d.toISOString().slice(0, 16)
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <p className="text-sm text-gray-500 dark:text-gray-400">タスクが見つかりません</p>
+        <button
+          onClick={() => router.back()}
+          className="text-sm text-blue-500 hover:underline"
+        >
+          戻る
+        </button>
+      </div>
+    )
+  }
+
   if (!task) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -92,6 +168,10 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
       </div>
     )
   }
+
+  const sortedReminders = [...(task.reminders ?? [])].sort(
+    (a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime()
+  )
 
   return (
     <div className="px-4 pt-12 pb-8">
@@ -268,6 +348,120 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
               {task.memo || <span className="text-gray-300 dark:text-gray-600">なし</span>}
             </p>
           )}
+        </div>
+
+        {/* Google Calendar */}
+        {task.due_date && (
+          <div>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-2 flex items-center gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Googleカレンダー
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSyncCalendar}
+                disabled={isSyncingCalendar}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 disabled:opacity-40 transition-colors"
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                {isSyncingCalendar
+                  ? '同期中...'
+                  : task.google_calendar_event_id
+                  ? 'カレンダーを更新'
+                  : 'カレンダーに追加'}
+              </button>
+              {task.google_calendar_event_id && (
+                <span className="text-xs text-green-500 flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-400 inline-block" />
+                  連携済み
+                </span>
+              )}
+            </div>
+            {calendarSyncMessage && (
+              <p
+                className={clsx(
+                  'mt-1.5 text-xs',
+                  calendarSyncMessage === '同期しました'
+                    ? 'text-green-500'
+                    : 'text-red-400'
+                )}
+              >
+                {calendarSyncMessage}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Reminders */}
+        <div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-2 flex items-center gap-1.5">
+            <Bell className="h-3.5 w-3.5" />
+            リマインダー
+          </p>
+
+          <div className="space-y-2 mb-3">
+            {sortedReminders.length === 0 ? (
+              <p className="text-xs text-gray-300 dark:text-gray-600">リマインダーなし</p>
+            ) : (
+              sortedReminders.map((reminder: Reminder) => (
+                <div
+                  key={reminder.id}
+                  className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {reminder.is_sent ? (
+                      <BellOff className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                    ) : (
+                      <Bell className="h-3.5 w-3.5 text-blue-400 flex-shrink-0" />
+                    )}
+                    <span
+                      className={clsx(
+                        'text-xs truncate',
+                        reminder.is_sent
+                          ? 'text-gray-300 dark:text-gray-600 line-through'
+                          : 'text-gray-700 dark:text-gray-300'
+                      )}
+                    >
+                      {formatReminderDate(reminder.remind_at)}
+                    </span>
+                    {reminder.is_sent && (
+                      <span className="text-xs text-gray-300 dark:text-gray-600 flex-shrink-0">
+                        送信済み
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDeleteReminder(reminder.id)}
+                    className="text-gray-300 dark:text-gray-600 hover:text-red-400 transition-colors flex-shrink-0"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Add reminder form */}
+          <form onSubmit={handleAddReminder} className="flex items-center gap-2">
+            <input
+              type="datetime-local"
+              value={newRemindAt}
+              onChange={(e) => setNewRemindAt(e.target.value)}
+              onFocus={(e) => {
+                if (!e.target.value) e.target.value = getDefaultRemindAt()
+                setNewRemindAt(e.target.value)
+              }}
+              min={new Date().toISOString().slice(0, 16)}
+              className="flex-1 text-xs border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 outline-none"
+            />
+            <button
+              type="submit"
+              disabled={!newRemindAt || isAddingReminder}
+              className="text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </form>
         </div>
 
         {/* Subtasks */}

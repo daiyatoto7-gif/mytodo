@@ -10,6 +10,7 @@ import type { Task } from '@/types'
 
 interface TaskCardProps {
   task: Task
+  onUpdate?: () => void
 }
 
 const PRIORITY_LABEL: Record<string, string> = {
@@ -24,7 +25,7 @@ const PRIORITY_COLOR: Record<string, string> = {
   low: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
 }
 
-export default function TaskCard({ task }: TaskCardProps) {
+export default function TaskCard({ task, onUpdate }: TaskCardProps) {
   const [isCompleting, setIsCompleting] = useState(false)
 
   const completedSubtasks = task.subtasks?.filter((s) => s.is_completed).length ?? 0
@@ -45,6 +46,7 @@ export default function TaskCard({ task }: TaskCardProps) {
     setIsCompleting(true)
     await toggleTaskComplete(task.id, !task.is_completed)
     setIsCompleting(false)
+    onUpdate?.()
   }
 
   return (

@@ -23,6 +23,7 @@ export interface Task {
   updated_at: string
   category?: Category
   subtasks?: Subtask[]
+  reminders?: Reminder[]
 }
 
 export interface Subtask {
@@ -33,10 +34,19 @@ export interface Subtask {
   created_at: string
 }
 
+export interface Reminder {
+  id: string
+  task_id: string
+  remind_at: string
+  is_sent: boolean
+  created_at: string
+}
+
 export interface User {
   id: string
   email: string
   fcm_token: string | null
   google_access_token: string | null
   google_refresh_token: string | null
+  google_token_expires_at: string | null
 }

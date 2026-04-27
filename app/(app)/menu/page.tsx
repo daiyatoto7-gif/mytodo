@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Plus, Pencil, Trash2, X, Check } from 'lucide-react'
+import { useState, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { Plus, Pencil, Trash2, X, Check, CalendarDays } from 'lucide-react'
 import { signOut } from '@/app/actions/auth'
 import { getCategories, createCategory, updateCategory, deleteCategory } from '@/app/actions/categories'
+import { getGoogleCalendarStatus, disconnectGoogleCalendar } from '@/app/actions/google-calendar'
 import type { Category } from '@/types'
 
 const PRESET_COLORS = [
@@ -11,7 +13,8 @@ const PRESET_COLORS = [
   '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6B7280',
 ]
 
-export default function MenuPage() {
+function MenuPageInner() {
+  const searchParams = useSearchParams()
   const [categories, setCategories] = useState<Category[]>([])
   const [isAdding, setIsAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -19,14 +22,32 @@ export default function MenuPage() {
   const [newColor, setNewColor] = useState(PRESET_COLORS[0])
   const [editName, setEditName] = useState('')
   const [editColor, setEditColor] = useState('')
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false)
+  const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const [googleMessage, setGoogleMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   async function loadCategories() {
     const data = await getCategories()
     setCategories(data as Category[])
   }
 
+  async function loadGoogleStatus() {
+    const connected = await getGoogleCalendarStatus()
+    setIsGoogleConnected(connected)
+  }
+
   useEffect(() => {
     loadCategories()
+    loadGoogleStatus()
+
+    const success = searchParams.get('success')
+    const error = searchParams.get('error')
+    if (success === 'google_connected') {
+      setGoogleMessage({ type: 'success', text: 'Googleカレンダーと連携しました' })
+    } else if (error) {
+      setGoogleMessage({ type: 'error', text: 'Googleカレンダー連携に失敗しました' })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function handleCreate() {
@@ -50,6 +71,16 @@ export default function MenuPage() {
       await deleteCategory(id)
       loadCategories()
     }
+  }
+
+  async function handleDisconnectGoogle() {
+    if (!confirm('Googleカレンダーとの連携を解除しますか？')) return
+    setIsDisconnecting(true)
+    await disconnectGoogleCalendar()
+    setIsGoogleConnected(false)
+    setGoogleMessage({ type: 'success', text: '連携を解除しました' })
+    setIsDisconnecting(false)
+    setTimeout(() => setGoogleMessage(null), 3000)
   }
 
   return (
@@ -166,6 +197,47 @@ export default function MenuPage() {
         </div>
       </section>
 
+      {/* Google Calendar section */}
+      <section className="mb-8">
+        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <CalendarDays className="h-3.5 w-3.5" />
+          Googleカレンダー連携
+        </h2>
+
+        {isGoogleConnected ? (
+          <div className="space-y-2">
+            <div className="p-3 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-green-400 flex-shrink-0" />
+              <span className="flex-1 text-sm text-gray-700 dark:text-gray-300">連携済み</span>
+            </div>
+            <button
+              onClick={handleDisconnectGoogle}
+              disabled={isDisconnecting}
+              className="w-full text-left p-3 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors disabled:opacity-50"
+            >
+              {isDisconnecting ? '解除中...' : '連携を解除'}
+            </button>
+          </div>
+        ) : (
+          <a
+            href="/api/auth/google-calendar"
+            className="block p-3 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 text-sm text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors"
+          >
+            Googleカレンダーと連携する
+          </a>
+        )}
+
+        {googleMessage && (
+          <p
+            className={`mt-2 text-xs ${
+              googleMessage.type === 'success' ? 'text-green-500' : 'text-red-400'
+            }`}
+          >
+            {googleMessage.text}
+          </p>
+        )}
+      </section>
+
       {/* Account section */}
       <section>
         <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
@@ -181,5 +253,13 @@ export default function MenuPage() {
         </form>
       </section>
     </div>
+  )
+}
+
+export default function MenuPage() {
+  return (
+    <Suspense>
+      <MenuPageInner />
+    </Suspense>
   )
 }

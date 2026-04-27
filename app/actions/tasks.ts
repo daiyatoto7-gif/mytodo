@@ -58,7 +58,7 @@ export async function getTask(id: string) {
 
   const { data, error } = await supabase
     .from('tasks')
-    .select('*, category:categories(*), subtasks(*)')
+    .select('*, category:categories(*), subtasks(*), reminders(*)')
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
